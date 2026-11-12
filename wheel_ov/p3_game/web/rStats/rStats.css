@@ -1,0 +1,30 @@
+.Stats {
+  position: absolute;
+  top: 0px;
+  right: 0px;
+  background-color: rgba(0, 0, 0, 0.267);
+  display: grid;
+  grid-template-columns: auto auto auto auto auto auto;
+  font-size: 10px;
+  line-height: 10px;
+}
+.Stats div {
+  margin: 3px;
+}
+.Warnings {
+  position: absolute;
+  top: 20px;
+  right: 0px;
+  background-color: rgba(58, 11, 11, 0.733);
+  font-size: 10px;
+  line-height: 10px;
+  font-weight: bold;
+  display: grid;
+  grid-template-columns: auto;
+}
+.Warnings div {
+  border: 1px solid #ff8282;
+  display: none;
+  padding: 3px;
+  color: #ff8282;
+}

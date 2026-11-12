@@ -1,0 +1,123 @@
+/* v1.0 */
+
+body{
+    margin:0;
+    width:100%;
+    height:100%;
+    display:grid;
+
+    //background-color:#030c1b  !important;//#020910 !important; 030c1b
+}
+
+
+
+
+#div-parent-con{
+    position: absolute;
+    display:grid;
+    transform: translate(-50%, -50%);
+
+    color: #e8f1ff;
+    font-weight: 600;
+    font-size: 17px;//changed dynamic
+    line-height: 18px;//changed dynamic
+
+    width:340px;//changed dynamic
+
+    #div-context {
+        color:#e8f1ff;
+        font-size:15px;
+        padding:4px;
+        text-shadow: 1px 0 0 black, 0 -1px 0 black, 0 1px 0 black, -1px 0 0 black;
+        #div-context-title{
+            color:rgb(146, 103, 23);
+        }
+    }
+}
+
+#div-text-con{
+    //position: absolute;
+    display:grid;
+    place-content: center;
+    padding:5px;
+    
+    //text-shadow: 1px 0 0 #000, 0 -1px 0 #000, 0 1px 0 #000, -1px 0 0 #000;
+    border-radius:3px;
+    width:100%;
+    max-height: 60px;//dynamic
+    
+    //min-width:100px;
+    //max-width:360px;
+    
+    overflow:hidden;
+
+    box-shadow: 0 0 2px 1px rgb(0, 0, 0);
+    border: 1px solid #afcfff;
+    background-color:rgba(0, 0, 0, 0.801);
+
+    //transform: translate(-50%, -50%);
+
+    #div-text{
+        position:relative;
+        bottom:0;
+    }
+}
+
+.showing {
+    opacity: 1;
+    transition: opacity 0.3s linear;
+}
+
+.hiding {
+    opacity: 0;
+    transition: opacity 0.3s linear;
+}
+
+#div-video{
+    position:absolute;
+    top:10px;
+    left:10px;
+
+    video{
+        border-radius: 2px;
+        border: 1px solid black;
+        box-shadow: 0 0 2px 1px rgb(0, 0, 0);
+
+        z-index: 5;
+        max-width: 400;
+        max-height:400;
+    }
+}
+
+.div-modal{
+    position:absolute;
+    padding:10px;
+    border:1px solid black;
+    border-radius:2px;
+    background-color:rgba(15, 31, 17, 0.623);
+    top:100px;
+    justify-self: center;
+    min-width:300px;
+    display:grid;
+}
+
+.div-box{
+    padding:5px;
+    color:#e2e2e2;
+    background-color:rgba(33, 46, 70, 0.575);
+    border-radius:2px;
+    box-shadow: 0 0 2px 1px rgb(0, 0, 0);
+}
+
+html{
+    height:100%;
+    body{
+        height:100%;
+        #root{
+            height:100%;
+        }
+    }
+}
+
+
+

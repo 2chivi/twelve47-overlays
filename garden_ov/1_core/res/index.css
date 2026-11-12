@@ -1,0 +1,118 @@
+.gui {
+  position: fixed;
+  top: 0;
+  padding: 5px;
+  color: black;
+  width: 100%;
+  height: 100%;
+}
+.div-ob .div-con {
+  display: grid;
+  grid-template-columns: auto auto;
+  width: 200px;
+}
+.div-ob .btn {
+  margin: 2px;
+}
+/* v1.0 */
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  display: grid;
+}
+#div-parent-con {
+  position: absolute;
+  display: grid;
+  transform: translate(-50%, -50%);
+  color: #e8f1ff;
+  font-weight: 600;
+  font-size: 17px;
+  line-height: 18px;
+  width: 340px;
+}
+#div-parent-con #div-context {
+  color: #e8f1ff;
+  font-size: 15px;
+  padding: 4px;
+  text-shadow: 1px 0 0 black, 0 -1px 0 black, 0 1px 0 black, -1px 0 0 black;
+}
+#div-parent-con #div-context #div-context-title {
+  color: #926717;
+}
+#div-text-con {
+  display: grid;
+  place-content: center;
+  padding: 5px;
+  border-radius: 3px;
+  width: 100%;
+  max-height: 60px;
+  overflow: hidden;
+  box-shadow: 0 0 2px 1px #000000;
+  border: 1px solid #afcfff;
+  background-color: rgba(0, 0, 0, 0.801);
+}
+#div-text-con #div-text {
+  position: relative;
+  bottom: 0;
+}
+.showing {
+  opacity: 1;
+  transition: opacity 0.3s linear;
+}
+.hiding {
+  opacity: 0;
+  transition: opacity 0.3s linear;
+}
+#div-video {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+}
+#div-video video {
+  border-radius: 2px;
+  border: 1px solid black;
+  box-shadow: 0 0 2px 1px #000000;
+  z-index: 5;
+  max-width: 400;
+  max-height: 400;
+}
+.div-modal {
+  position: absolute;
+  padding: 10px;
+  border: 1px solid black;
+  border-radius: 2px;
+  background-color: rgba(15, 31, 17, 0.623);
+  top: 100px;
+  justify-self: center;
+  min-width: 300px;
+  display: grid;
+}
+.div-box {
+  padding: 5px;
+  color: #e2e2e2;
+  background-color: rgba(33, 46, 70, 0.575);
+  border-radius: 2px;
+  box-shadow: 0 0 2px 1px #000000;
+}
+html {
+  height: 100%;
+}
+html body {
+  height: 100%;
+}
+html body #root {
+  height: 100%;
+}
+.con-alert {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  box-shadow: 0 0 1px 1px #000000;
+  background-color: #bbe1ff;
+  border-radius: 2px;
+  padding: 15px 25px;
+  font-weight: 600;
+  font-size: 18px;
+  color: #070a13;
+}

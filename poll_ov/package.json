@@ -1,0 +1,22 @@
+{
+  "name": "todo",
+  "version": "1.0.0",
+  "description": "",
+  "main": "app.js",
+  "dependencies": {
+    "express": "^4.17.1",
+    "fs": "^0.0.1-security",
+    "glob": "^7.1.6",
+    "mongodb": "^2.2.33",
+    "seedrandom": "^3.0.5",
+    "socket.io": "^2.3.0",
+    "uglify-es": "^3.3.9"
+  },
+  "scripts": {
+    "start": "node app.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": ""
+  }
+}

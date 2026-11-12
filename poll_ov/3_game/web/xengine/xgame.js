@@ -1,0 +1,1735 @@
+//xgame v1.01 : window resize errors
+//gravity == 0.285
+
+//G
+var G = {};
+
+(function (G) {
+    G.IsServer = typeof exports !== 'undefined';
+    G.StartWidth_ = 1920;
+    G.StartHeight_ = 1080;
+    G.Loader_ = !G.IsServer ? PIXI.Loader.shared : null;
+    //threejs stuff
+    G.Loader2 = !G.IsServer ? new THREE.TextureLoader() : null;
+    G.pad = { index: null, x: 0, y: 0 };
+    G.ObjectsToAdd = [];
+    G.ObjectsToRemove = [];
+    G.tickActions_ = new Map();
+    G.Objs = new Map();
+    G.cycleAvg = G.renderAvg = G.packetAvg = G.avgTotal = 0;
+    G.EngineBehind = 0;
+    G.RenderBehind = 0;
+    G.bounds = { min: { x: 0, y: 0 }, max: { x: 0, y: 0 } };
+    G.Dudes = [];
+    G.reOrderNeeded = false;
+    G.lerps = {};
+
+    G.Init_ = function (con, onLoad) {
+        PL = planck;
+        PL.v2 = PL.Vec2;
+        PL.internal.Settings.maxPolygonVertices = 48;
+
+        G.FRate_ = 100 / 3;
+        G.Width = G.Width ? G.Width : G.StartWidth_;
+        G.Height = G.Height ? G.Height : G.StartHeight_;
+        G.HasServer = typeof (SN) != 'undefined';
+        G.tickActions_.clear();
+        G.Tick = G.RTick = G.ATick = 0;
+        G.tslf = new UT.Queue();
+        G.renderTimes = new UT.Queue();
+        G.cycleTimes = new UT.Queue();
+        G.packetTimes = new UT.Queue();
+        G.LastTime_ = Date.now();
+        G.LastAccumTime_ = Date.now();
+        G.LastPivotPos = { x: 0, y: 0 };
+        G.pscale = 30;
+        G.pause = false;
+        G.gravity = 70;//60
+        G.con = con;
+        G.ObjTicker = 0;
+        G.Dudes = [];
+
+        if (!G.World_) {
+            G.World_ = planck.World(PL.Vec2(0, G.gravity));
+            G.Events_();
+        }
+
+        if (!G.IsServer) {
+            var firstRender = G.Renderer2 == null;
+
+            if (firstRender) {
+                //fov/aspect/near/far   1/860
+                G.Cam = new THREE.PerspectiveCamera(60, G.Width/G.Height, 500, 860);
+
+
+                var aspect = G.Width / G.Height;
+                G.Cam = new THREE.OrthographicCamera(G.Height * aspect / -2, G.Height * aspect / 2, G.Height / 2, G.Height / -2, 1, 2000);
+                G.Cam.position.set(0, 0, 800);
+
+                G.Renderer2 = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
+                G.Renderer2.shadowMap.enabled = true;
+
+                //G.Renderer2.shadowMap.type = THREE.PCFShadowMap;
+                G.Renderer2.setSize(G.Width, G.Height);
+
+                G.Scene = new THREE.Scene();
+
+
+                //G.Scene.background = new THREE.Color(0x333333); //background color
+                var ambient = new THREE.AmbientLight(0xadbb93, 0.21);//404040
+                G.Scene.add(ambient);
+
+                var directionalLight = new THREE.DirectionalLight(0xffffff, 1.6);
+                G.DirLight = directionalLight;
+
+                G.DirLight.shadow.mapSize.width = 1024;
+                G.DirLight.shadow.mapSize.height = 1024;
+
+                G.DirLight.shadow.camera.near = 5;
+                G.DirLight.shadow.camera.far = 2000;
+
+                G.DirLight.shadow.camera.right = G.Width * 1;
+                G.DirLight.shadow.camera.left = -G.Width * 1;
+                G.DirLight.shadow.camera.top = G.Height * 1;
+                G.DirLight.shadow.camera.bottom = -G.Height * 1;
+
+
+                G.DirLight.castShadow = true;
+                G.DirLight.target.position.set(0, 0, -300);//-250
+                G.DirLight.position.set(-200, 200, 400);//300
+
+                //-2 vs -31
+                //800 = cam pos
+                //G.Scene.fog = new THREE.Fog(0x180946, 795, 855);//795 855  790 815
+
+                //G.DirLight.target.position.set(-500, 1,200);
+                G.Scene.add(G.DirLight);
+                G.Scene.add(G.DirLight.target);
+
+
+                /*
+                G.badPass = new THREE.ShaderPass(THREE.BadTVShader);
+                G.filmPass = new THREE.ShaderPass(THREE.FilmShader);
+                G.rgbPass = new THREE.ShaderPass(THREE.RGBShiftShader);
+
+                GU.DefaultUniforms();
+
+                G.composer = new THREE.EffectComposer(G.Renderer2, G.renderTarget);
+                G.composer.setSize(500, 500);
+                G.composer.addPass(new THREE.RenderPass(G.Scene, G.camera));
+                G.composer.addPass(G.filmPass);
+                G.composer.addPass(G.badPass);
+                G.composer.addPass(G.rgbPass);
+
+                G.composer.addPass(new THREE.ShaderPass(THREE.CopyShader));
+                G.composer.renderToScreen = true;
+
+
+                G.planemateriala = new THREE.MeshBasicMaterial({
+                    map: G.renderTarget.texture,
+                });
+                */
+
+                /*
+                var scale = 200;
+                var planegeometrya = new THREE.PlaneGeometry(1 * scale, scale * 1, scale * 1, 1 * scale);
+                G.planemateriala = new THREE.MeshBasicMaterial({
+                    map: G.renderTarget.texture,
+                });
+                var planea = new THREE.Mesh(planegeometrya, G.planemateriala);
+                planea.position.x = 400;
+                G.Scene.add(planea);*/
+
+            }
+
+            PIXI.Ticker.shared.autoStart = false;
+            PIXI.Ticker.shared.stop();
+
+            if (firstRender) {
+                con.appendChild(G.Renderer2.domElement);
+
+                //G.render.domElement.style.border = '10px solid black';
+                //con.appendChild(G.render.domElement);
+            }
+        }
+
+
+
+        G.onLoad = onLoad;
+        G.PlayReset_();
+    };
+
+    G.Events_ = function () {
+        G.ends = [];
+        G.begins = [];
+
+        G.World_.on('begin-contact', function (contact) {
+            G.begins.push({
+                fixA: contact.getFixtureA(),
+                fixB: contact.getFixtureB(),
+                obA: G.Objs.get(contact.getFixtureA().oid),
+                obB: G.Objs.get(contact.getFixtureB().oid),
+                contact
+            });
+        });
+        G.World_.on('end-contact', function (contact) {
+            G.ends.push({
+                fixA: contact.getFixtureA(),
+                fixB: contact.getFixtureB(),
+                obA: G.Objs.get(contact.getFixtureA().oid),
+                obB: G.Objs.get(contact.getFixtureB().oid),
+                contact
+            });
+        });
+    }
+
+    G.InitObj = function (type, oid) {
+        if (oid)
+            eval('var ob = new ' + type + "('" + oid + "', '" + type + "');");
+        else
+            eval('var ob = new ' + type + "(null, '" + type + "');");
+        return ob;
+    };
+
+    G.LoadObj = function (obj, state) {
+        if (state)
+            Object.keys(state)._each(key => { obj[key] = state[key]; });
+        obj.loadProps = JSON.parse(JSON.stringify(state));//creates copy
+        G.AddObject(obj);
+        return obj;
+    }
+
+    G.InitLoad = function (oid, type, state) {
+        var obj = G.InitObj(type, oid);
+        return G.LoadObj(obj, state);
+    };
+
+    G.AddObject = function (obj) {
+        G.ObjectsToAdd.push(obj);
+    };
+
+    G.AddObjectHelp_ = function (obj) {
+        if (G.Objs.has(obj.oid))
+            G.RemoveObjectHelp_(G.Objs.get(obj.oid));
+        G.Objs.set(obj.oid, obj);
+
+        if (obj.IsPlayer)
+            G.Dudes = G.Objs._where(x => x.IsPlayer);
+    }
+
+    G.RemoveObject_ = function (obj) {
+        G.ObjectsToRemove.push(obj);
+    };
+
+    G.RemoveObjectHelp_ = function (obj) {
+        if (obj && !obj.removedObject) {
+            obj.children._each(c => { G.RemoveObject_(c); });
+
+            var stage = obj.stage;
+            obj.removedObject = true;
+
+            if (obj.OnRemove)
+                obj.OnRemove();
+
+            if (obj.parentObj)
+                obj.parentObj.children = obj.parentObj.children._where(x => x.removedObject == null);
+
+            obj.parts._each(part => {
+
+
+                part.grs._each(gr => {
+                    //stage.removeChild(gr); 
+
+                    G.Scene.remove(G.Scene.getObjectById(gr.id));
+                });
+            });
+
+            G.World_.destroyBody(obj.con);
+            G.Objs.delete(obj.oid);
+
+            if (obj.IsPlayer)
+                G.Dudes = G.Objs._where(x => x.IsPlayer);
+        }
+    }
+
+    G.TickFunc_ = function (delta) {
+        G.TickInputCheck_();
+
+        G.Objs.forEach(ob => {
+            ob.Tick(delta);
+        });
+
+        G.ObjectsToRemove._each(x => { G.RemoveObjectHelp_(x); });
+
+        if (G.ObjectsToAdd.length > 0) {
+            G.reOrderNeeded = true;
+            if (G.objOrder)
+                G.ObjectsToAdd = G.ObjectsToAdd._orderBy(x => G.objOrder[x.oid]);
+
+            var l1 = G.ObjectsToAdd.length;
+            for (var i = 0; i < l1; i++) {
+                if (!G.ObjectsToAdd[i].parentObj)
+                    G.ObjectsToAdd[i].Init();
+            }
+
+            if (G.objOrder) {
+                G.ObjectsToAdd = G.ObjectsToAdd._orderBy(x => G.objOrder[x.oid]);
+                G.objOrder = null;
+            }
+
+            G.ObjectsToAdd._each(x => { G.AddObjectHelp_(x); });
+        }
+
+        G.ObjectsToAdd = [];
+        G.ObjectsToRemove = [];
+    };
+
+    G.TickForward_ = function () {
+        G.Tick++;
+        if (G.HasServer && !G.IsServer && CN)
+            CN.ServerTick_++;
+    };
+
+    G.PostPhysics_ = function () {
+        G.begins._each(b => {
+            if (b.obA && b.obB) {
+                b.obA.refreshData(); b.obB.refreshData();
+                if (b.obA.CollideStart)
+                    b.obA.CollideStart({ myType: b.fixA.etype, oType: b.fixB.etype, other: b.obB, t: b.obA, contact: b.contact, myFix: b.fixA, oFix: b.fixB });
+                if (b.obB.CollideStart && b.obA.oid != b.obB.oid)
+                    b.obB.CollideStart({ myType: b.fixB.etype, oType: b.fixA.etype, other: b.obA, t: b.obB, contact: b.contact, myFix: b.fixB, oFix: b.fixA });
+            }
+        });
+        G.ends._each(b => {
+            if (b.obA && b.obB) {
+                b.obA.refreshData(); b.obB.refreshData();
+                if (b.obA.CollideEnd)
+                    b.obA.CollideEnd({ myType: b.fixA.etype, oType: b.fixB.etype, other: b.obB, t: b.obA, contact: b.contact, myFix: b.fixA, oFix: b.fixB });
+                if (b.obB.CollideEnd && b.obA.oid != b.obB.oid)
+                    b.obB.CollideEnd({ myType: b.fixB.etype, oType: b.fixA.etype, other: b.obA, t: b.obB, contact: b.contact, myFix: b.fixB, oFix: b.fixA });
+            }
+        });
+        G.begins = [];
+        G.ends = [];
+
+        G.Objs.forEach(ob => {
+            ob.PostPhysics();
+
+            if (ob.IsServerObject) { //ob.IsServerObject){//ob.IsServerObject){
+
+                var old = {
+                    stick: G.IsServer ? G.Tick : (ob.IsGuy ? CN.ServerTick_ : CN.ServerTick_ - CN.InterpDelay_),
+                    pos: { x: ob.pos.x, y: ob.pos.y },
+                    vel: { x: ob.vel.x, y: ob.vel.y },
+                    angle: ob.con.getAngle(),
+                    state: {},
+                };
+                if (ob.state) {
+                    //old.state = ob.GetState();
+                    if (ob.IsGuy)
+                        ob.state._each(key => { old.state[key] = ob[key]; });
+                    ob.olds.enQ(old, 10);
+
+                    if (ob.IsServerObject && !G.IsServer && G.HasServer)
+                        CN.Interpolate_(ob);
+                }
+            }
+        });
+
+        //needs to be here so roundedSync happens same instant
+
+        if (G.IsServer) //putting this after collision - for server SN.ApplyInput_'s
+            SN.PostPhysics_(); //sends out packets on the server
+    };
+
+    //subTick 1->4
+    G.RenderFunc_ = function (mainTick, rate, delta) {
+        //var mainTick = !G.hasUpdatedRender;
+        G.hasUpdatedRender = true;
+        G.RTick = Math.min(G.Tick, G.RTick + rate); //(delta / G.FRate_);
+        G.ATick += (delta / G.FRate_);
+
+        if (!G.IsServer) {
+            if (mainTick)
+                Parts.UpdateParticles();
+            //G.UpdateParticles_(mainTick);
+
+            if (!G.bounds)
+                G.bounds = { buffer: 700, min: {}, max: {} }
+
+            G.bounds.buffer = 700;
+            G.bounds.min.x = G.Cam.position.x - (G.Width / G.Cam.zoom) * 0.5;
+            G.bounds.min.y = -G.Cam.position.y - (G.Height / G.Cam.zoom) * 0.5;
+            G.bounds.max.x = G.Cam.position.x + (G.Width / G.Cam.zoom) * 0.5;
+            G.bounds.max.y = -G.Cam.position.y + (G.Height / G.Cam.zoom) * 0.5;
+
+            //Screen Movement detection (performance)
+            if (mainTick) {
+                //Calc the Edges of the scren
+
+                var pivotDelta = G.dist(G.LastPivotPos, G.Cam.position);
+                G.ScreenMoved = false;
+                if (pivotDelta > (G.bounds.buffer * 0.5)) {
+                    G.ScreenMoved = true;
+                    G.LastPivotPos.x = G.Cam.position.x;
+                    G.LastPivotPos.y = G.Cam.position.y;
+                }
+            }
+        }
+
+        //var pct = (G.acc_ + (Date.now() - G.old60)) / G.FRate_;
+        //pct = mainTick ? 0.5 : 1;
+        var tickDiff = G.Tick - G.RTick;
+        var tickDiffRnd = Math.floor(tickDiff);
+        var pct = 1 - (tickDiff % 1);// Math.ceil(tickDiff) - tickDiff;
+        //console.log(tickDiff + " " + pct);
+
+        G.Objs.forEach(ob => {
+            if (!G.IsServer) {
+                ob.PreRender(mainTick, tickDiffRnd, pct, rate);
+                ob.Render(mainTick, tickDiffRnd, pct, rate);
+            }
+        });
+
+        //camera stuff
+        //switch to a basic Camera Trap.  Box which you can pass from cenx/ceny
+        if (typeof CN != 'undefined' && CN.Guy) {
+
+            //G.Stage_.x = -(CN.Guy.interpX - (G.Width / G.Stage_.scale.x)/2);
+            //G.Stage_.y = -(CN.Guy.interpY -(G.Height / G.Stage_.scale.x)/2);
+
+            var settings = { xpct: 0.5, ypct: 0.65, boxWidth: 40, boxHeight: 100 };
+            if (CN.Guy.cameraSettings)
+                Object.assign(settings, CN.Guy.cameraSettings);
+
+
+            var cenx = (G.Cam.position.x);
+            var ceny = -(G.Cam.position.y);
+            //G.Cam.position.x = (G.Width) * settings.xpct;
+            //G.Cam.position.y = -((G.Height) * settings.ypct);
+
+            //G.Stage_.pivot.x = CN.Guy.interpX;// - ((G.Width / G.Stage_.scale.x) / 2);
+            //G.Stage_.pivot.y = CN.Guy.interpY;// - ((G.Height / G.Stage_.scale.x) / 2);
+
+            if (CN.Guy.interpX > (cenx + settings.boxWidth))
+                G.Cam.position.x = (CN.Guy.interpX - settings.boxWidth);
+            if (CN.Guy.interpX < (cenx - settings.boxWidth))
+                G.Cam.position.x = (CN.Guy.interpX + settings.boxWidth);
+
+            if (CN.Guy.interpY < (ceny - settings.boxHeight))
+                G.Cam.position.y = -(CN.Guy.interpY + settings.boxHeight);
+            if (CN.Guy.interpY > (ceny + settings.boxHeight))
+                G.Cam.position.y = -(CN.Guy.interpY - settings.boxHeight);
+
+
+                /*
+            G.DirLight.position.x = G.Cam.position.x + 150;
+            G.DirLight.position.y = G.Cam.position.y - 350;
+            G.DirLight.target.position.x = G.Cam.position.x - 100;
+            G.DirLight.target.position.y = G.Cam.position.y + 100;*/
+
+            if (CG.UpdatePointer && mainTick)
+                CG.UpdatePointer();
+        }
+
+        if (G.Shake && mainTick) {
+
+            var xdir = Math.random() > 0.5 ? 1 : -1;
+            var ydir = Math.random() > 0.5 ? 1 : -1;
+            G.Cam.position.x += xdir * G.Shake * 0.75;
+            G.Cam.position.y += ydir * G.Shake * 0.75;
+            G.Shake = G.Shake * 0.4;
+            if (G.Shake < 0.1)
+                G.Shake = null;
+        } else if (!G.Shake) {
+            G.Cam.position.x = 0;
+            G.Cam.position.y = 0;
+        }
+
+    };
+
+    /*
+    G.UpdateParticles_ = function(mainTick){
+
+        G.ParticleContainers.forEach((con,key)=> {
+            if (mainTick || con.alwaysUpdate) {
+                for (var i = 0; i < con.children.length; i++) {
+                    var p = con.children[i];
+                    p.rx += p.vel.x;
+                    p.ry += p.vel.y;
+                    p.x = p.rx;
+                    p.y = p.ry;
+
+                    if (p.scaleVel) {
+                        p.scale.x += p.scaleVel.x;
+                        p.scale.y += p.scaleVel.y;
+                    }
+                    if (p.rotVel)
+                        p.rotation += p.rotVel;
+
+                    if (p.decay)
+                        p.life--;
+
+                    p.alpha = p.life / p.maxLife;
+
+                    if (p.func)
+                        p.func(p);
+
+                    if (p.life <= 0) {
+                        //con.removeChild(p);
+                        p.destroy();
+                    }
+                }
+            }
+        });
+    }*/
+
+    G.Cleanup_ = function (x, y) {
+        return;
+        //physics
+        console.log('G.Cleanup_');
+        G.Objs.clear();
+        UT.List(G.World_.getBodyList())._each(b => G.World_.destroyBody(b));
+        UT.List(G.World_.getContactList())._each(b => G.World_.destroyContact(b));
+        UT.List(G.World_.getJointList())._each(b => G.World_.destroyJoint(b));
+
+        if (!G.IsServer && G.Scene) {
+
+            for (var i = G.Scene.children.length - 1; i >= 0; i--) {
+                obj = G.Scene.children[i];
+                if (!obj.isLight && obj.id != G.DirLight.target.id)
+                    G.Scene.remove(obj);
+            }
+        }
+    };
+
+    G.PlayReset_ = function (x, y) {
+        G.Cleanup_(x, y);
+
+        if (G.onLoad)
+            G.onLoad();
+        UT.trigger('g_init');
+
+        //SERVER SIDE LOOOOP=======================
+        var fpsInt = Math.ceil(G.FRate_);
+        G.old60 = Date.now();
+        G.old60r = Date.now();
+        G.LastRender = Date.now();
+        G.LastFinishedTime = Date.now() - 100;
+        G.acc_ = 0;
+        G.deltaStore_ = 0;
+
+        if (G.IsServer) {
+
+            G.Loop_ = function () {
+                if (G.pause) return;
+
+                var info = G.basicLoop_();
+                G.CalcStats(info);
+
+                if ((Date.now() - G.old60) < (fpsInt - 4))
+                    G.ttServer1 = setTimeout(G.Loop_);
+                else
+                    G.ttServer2 = setImmediate(G.Loop_);
+
+                G.ttime = Date.now();
+            };
+            G.Loop_();
+        } else { //CLIENT SIDE LOOOP------------------
+
+            if (G.AnimationRequest_ != null)
+                cancelAnimationFrame(G.AnimationRequest_);
+            if (G.RenderRequest_ != null)
+                cancelAnimationFrame(G.RenderRequest_);
+
+            G.anim = function () {
+                G.AnimationRequest_ = requestAnimationFrame(G.anim);
+                var info = G.basicLoop_();
+                G.CalcStats(info);
+            }
+            G.anim();
+
+        }
+    };
+
+    G.CalcStats = function (basicLoopInfo) {
+        if (basicLoopInfo.engineStart) {
+            G.cycleTimes.enQ(basicLoopInfo.engineStop - basicLoopInfo.engineStart, 10);
+            G.cycleAvg = G.cycleTimes.array()._avg();//G.cycleTimes._max(x => x);
+            if (G.IsServer)
+                G.packetAvg = Object.values(G.packetTimes.data)._avg();
+            G.avgTotal = G.renderAvg * 2 + G.cycleAvg + G.packetAvg;
+        }
+        if (basicLoopInfo.renderStart) {
+            G.renderTimes.enQ(Date.now() - basicLoopInfo.renderStart, 10);
+            G.renderAvg = G.renderTimes.array()._avg();// G.renderTimes._max(x => x);
+        }
+        if (basicLoopInfo.renderStart || basicLoopInfo.engineStart) {
+            G.tslf.enQ(basicLoopInfo.time - G.LastFinishedTime, 10);
+            G.SinceLastAvg = G.tslf.array()._avg();
+            G.LastFinishedTime = Date.now();
+        }
+    }
+
+    G.basicLoop_ = function () {
+        var renderStart = null;
+        var engineStart = null;
+        var engineStop = null;
+        var time = Date.now();
+        var mainTickTriggered = false;
+        G.deltaStore_ += (time - G.old60);
+        G.acc_ += (time - G.old60);
+        G.old60 = time;
+        G.LastAccumTime_ = time;
+        G.TimeStep = 1 / G.FRate_;
+
+        if (G.acc_ >= G.FRate_) {
+            engineStart = Date.now();
+            if (!G.IsServer)
+                G.CheckGamepad();
+
+            G.hasDoneSecondRender = false;
+            G.hasUpdatedRender = false;
+            mainTickTriggered = true;
+            G.TickFunc_(G.deltaStore_ / G.FRate_);
+            G.deltaStore_ = 0;
+
+            G.World_.step(G.TimeStep);
+
+            G.PostPhysics_();
+            //G.RenderFunc_(true); //interpolation ?? vel changes
+
+            G.TickForward_();
+            G.LastTime_ = Date.now();
+            G.LastAccumTime_ = G.LastTime_;
+            G.acc_ = G.acc_ - G.FRate_;
+
+            if (Math.abs(G.acc_) >= G.FRate_ * 20) {
+                UT.trigger('g_accum');
+                G.acc_ = 0;
+            }
+
+            engineStop = Date.now();
+            UT.trigger('g_tick');
+            //return { time: update, main: true };
+        }
+
+        if (G.acc_ > (G.FRate_))
+            G.EngineBehind = Math.max(60, G.EngineBehind + 2);
+        else if (G.EngineBehind > 0)
+            G.EngineBehind--;
+
+        if (!G.IsServer) {
+            var time = Date.now();
+            G.old60r = time;
+            var timeSinceLast = time - G.LastRender;
+            var ticksBehind = G.Tick - G.RTick;
+            G.renderFreq = (G.EngineBehind || G.avgTotal > 21) ? 1 : 0.6; //0.5 == 60fps if FRate=33.33.  increase to lower render rate
+
+            if (ticksBehind > 4)
+                G.RTick = G.Tick - G.renderFreq;
+
+            if (mainTickTriggered || (ticksBehind >= G.renderFreq && timeSinceLast > 10 && !G.EngineBehind)) {
+                var renderStart = time;
+                var behind = ticksBehind > 2;
+
+                G.LastRender = Date.now();
+                G.RenderFunc_(mainTickTriggered, (behind ? (G.renderFreq + 0.2) : G.renderFreq), timeSinceLast);
+
+                PIXI.Ticker.shared.update(Date.now());
+
+                G.Renderer2.render(G.Scene, G.Cam);
+            }
+
+            if ((G.Tick - G.RTick) > 1.1) {
+                G.RenderBehind = Math.max(30, G.RenderBehind + 2);
+            }
+            else if (G.RenderBehind > 0)
+                G.RenderBehind--;
+        }
+
+        if (renderStart || engineStart) {
+            G.tslf.enQ(time - G.LastFinishedTime, 10);
+            G.SinceLastAvg = G.tslf.array()._avg();
+            G.LastFinishedTime = Date.now();
+        }
+
+        return { renderStart, engineStart, engineStop, time };
+    };
+
+    G.CheckGamepad = function () {
+        var pads = navigator.getGamepads();
+
+        if (G.pad.index == null && pads[0]) {
+            G.pad.index = 0;
+            for (var i = pads.length - 1; i >= 0; i--) {
+                if (pads[i] && pads[i].mapping.length > 0)
+                    G.pad.index = i;
+            }
+        }
+
+        if (G.pad.index != null) {
+            var gp = pads[G.pad.index];
+            var ax = 0.45;
+
+
+            if (gp && CN.Guy) {
+                // console.log(gp);
+
+                for (var i = 0; i < 4; i++) {
+                    var a = gp.axes[i];
+                    var padplus = G.pad['aplus' + i];
+                    var padminus = G.pad['aminus' + i];
+                    var xAxis = i == 0 || i == 2;
+
+                    if (i < 2) {
+                        G.pad['aplus' + i] = a > ax ? 1 : 0;
+                        G.pad['aminus' + i] = a < -ax ? 1 : 0;
+
+                        if (a > ax && !padplus)
+                            UT.trigger('key', { button: xAxis ? EN.Btns.get('right') : EN.Btns.get('down'), val: 1 });
+                        else if (a < ax && padplus)
+                            UT.trigger('key', { button: xAxis ? EN.Btns.get('right') : EN.Btns.get('down'), val: 0 });
+
+                        if (a < -ax && !padminus)
+                            UT.trigger('key', { button: xAxis ? EN.Btns.get('left') : EN.Btns.get('up'), val: 1 });
+                        else if (a > -ax && padminus)
+                            UT.trigger('key', { button: xAxis ? EN.Btns.get('left') : EN.Btns.get('up'), val: 0 });
+
+                    } else {
+                        var update = Math.abs(gp.axes[2]) > ax || Math.abs(gp.axes[3]) > ax;
+                        if (update) {
+                            if (xAxis)
+                                G.pad['x'] = update ? a : 0;
+                            else
+                                G.pad['y'] = update ? a : 0;
+                            G.activePad = true;
+                        }
+
+                    }
+                }
+
+                for (var i = 0; i < gp.buttons.length; i++) {
+                    var b = gp.buttons[i];
+                    var padv = G.pad['b' + i];
+                    G.pad['b' + i] = b.value;
+
+                    if (b.value && !padv) {
+                        G.activePad = true;
+                        UT.trigger('key', { button: i, val: 1 });
+                    }
+                    else if (!b.value && padv)
+                        UT.trigger('key', { button: i, val: 0 });
+
+
+                }
+            }
+        }
+    }
+
+    G.TogglePause = function (onoff) {
+        if (!onoff) {
+            clearInterval(G.ttServer1);
+            clearImmediate(G.ttServer2);
+        }
+        if (G.pause && !onoff && G.IsServer) {
+            G.pause = onoff;
+            G.Loop_();
+        }
+        G.pause = onoff;
+    }
+
+    G.TickFunc = function (tick, func, func2, oid) {
+        var id = G.UID_(true) + Date.now();
+
+        if (func2 != null)
+            G.tickActions_.set(id, { tick, key: null, val: null, func: func2, data: func, id, oid });
+        else
+            G.tickActions_.set(id, { tick, key: null, val: null, func, id, oid });
+
+        return G.tickActions_.get(id);
+    };
+
+    G.TickAction = function (oid, tick, key, val, func) {
+        var id = G.UID_(true) + Date.now();
+        G.tickActions_.set(id, { tick, key, val, oid, func, id });
+    };
+
+    G.TickInputCheck_ = function () {
+
+        G.tickActions_.forEach((ta, key) => {
+            if (ta && G.Tick >= ta.tick) {
+                if (!ta.oid || G.Objs.has(ta.oid)) {
+                    if (ta.key)
+                        G.Objs.get(ta.oid)[ta.key] = ta.val;
+                    if (ta.func) {
+                        if (ta.data != null)
+                            ta.func(ta.data)
+                        else
+                            ta.func(ta.oid != null ? G.Objs.get(ta.oid) : null, ta.key, ta.val);
+                    }
+                }
+                G.tickActions_.delete(key);
+            }
+        });
+    };
+
+    G.HandleAnimations = function (x, gobj, isGraphic) {
+        if (x.animate) {
+            if (!x.astarted && x.animate.active) {
+                x.astarted = true;
+                x.aTime = Math.floor(G.Tick);
+            }
+
+            if (!x.animate.active)
+                x.astarted = false;//x.aTime = G.Tick;
+
+            //done
+            if (x.astarted && G.Tween(x, gobj, isGraphic)) {
+                var dfunc = x.animate.done;
+
+                if (!x.animate.repeat) {
+                    gobj.animations[x.animate.name].active = false;
+                    x.animate.active = false;
+                    x.astarted = false;
+                }
+
+                if (dfunc) dfunc();
+            }
+
+            if (!x.animate.active) {
+                x.astarted = false;
+            }
+        }
+        return x.animate && x.animate.active;
+    };
+
+    G.Tween = function (part, gobj, isGraph) {
+        var type = part.animate.type ? part.animate.type : EN.Curves.get('linear');
+        var period = part.animate.period;
+        var states = part.animate.states;
+        if (period == Infinity || period == null)
+            return false;
+        var tick = G.Tick - part.aTime;
+
+        //if(tick%period==0 && tick > 0 && part.animate.repeat)
+        //    states = states.reverse();
+        if (tick > period && tick > 0 && part.animate.repeat) {
+            part.aTime = Math.floor(G.Tick - (tick % period));
+            if (!part.animate.loop)
+                states = states.reverse();
+        }
+
+        var offset = (part.animate.offset != null ? part.animate.offset : 0);
+        G.TweenMove(part, gobj, isGraph, G.TweenStep(states, period, (tick + offset) % (period + 1), type));
+
+        //returns if it is done
+        return (Math.floor(tick) + 1) > period && !part.animate.repeat;
+    };
+
+    G.TweenStep = function (states, period, tick, type) {
+        var pct = tick / period;
+
+        if (type == EN.Curves.get('sin')) {
+            pct = Math.sin(Math.PI * 0.5 * tick / period);
+        }
+        else if (type == EN.Curves.get('quad'))
+            pct = G.Quad(null, tick, 0, 1, period);
+        else if (type == EN.Curves.get('cubic'))
+            pct = G.Cubic(null, tick, 0, 1, period);
+
+        var t1 = 1 / (states.length - 1);
+        var key = Math.floor((states.length - 1) * pct);
+        var t2 = pct - (t1 * key);
+        var statePct = t2 / t1;
+
+        var state = states[Math.min(key, states.length - 1)];
+        if (!state) return;
+        var nstate = states[(key + 1) % (states.length)];
+        if (!nstate) return;
+
+
+        return {
+            x: state.x != null ? state.x + ((nstate.x - state.x) * statePct) : null,
+            y: state.y != null ? state.y + ((nstate.y - state.y) * statePct) : null,
+            ang: state.ang != null ? state.ang + ((nstate.ang - state.ang) * statePct) : null,
+            scale: state.scale != null ? state.scale + ((nstate.scale - state.scale) * statePct) : null,
+            scaleX: state.scaleX != null ? state.scaleX + ((nstate.scaleX - state.scaleX) * statePct) : null,
+            scaleY: state.scaleY != null ? state.scaleY + ((nstate.scaleY - state.scaleY) * statePct) : null,
+            opac: state.alpha != null ? state.alpha + ((nstate.alpha - state.alpha) * statePct) : null,
+            z: state.z != null ? state.z + ((nstate.z - state.z) * statePct) : null,
+        };
+    };
+
+    G.TweenMove = function (part, gobj, isGraphic, step) {
+        var x = step.x;
+        var y = step.y;
+        var angle = step.ang;
+
+        if (isGraphic) {
+            var dir = (part.orient ? gobj.orient : part.animate.dir);
+            if (x != null)
+                part.wx = (part.ogx + x) * dir;
+            if (y != null)
+                part.wy = part.ogy + y;
+
+            if (step.z != null)
+                part.z = step.z;
+            if (angle != null)
+                part.wa = part.oga * dir + angle * dir;
+            if (step.scale != null) {
+                part.scale.y = step.scale * part.ogscaleY;
+                part.scale.x = step.scale * part.ogscaleX * dir;
+            }
+            if (step.scaleX != null)
+                part.scale.x = step.scaleX * part.ogscaleX * dir;
+            if (step.scaleY != null)
+                part.scale.y = step.scaleY * part.ogscaleY;
+
+            if (step.opac != null)
+                part.grAlpha = step.opac;
+
+        } else {
+            //real object animations?
+        }
+        return part;
+    };
+
+    //----------------------------------------------------------------------------------------
+
+    //0->16  Mask is stuff you can hit?
+    //generic = 0, dude = 1, terrain = 2, gate=5, punchbox=6,hurtbox=7 hurtbox=8(t2)
+    //--- serverTerrain = 14, delayTerrain = 15 (moving plats)
+    G.cats = [0x0001, 0x0002, 0x0004, 0x0008, 0x0010, 0x0020,
+        0x0040, 0x0080, 0x0100, 0x0200, 0x0400, 0x0800, 0x1000, 0x2000, 0x4000, 0x8000];
+
+    G.Default = {
+        color: 0x000000,
+        lineColor: 0x000000,
+        alignment: 1, //  (0.5 = middle, 1 = outer, 0 = inner).
+        zIndex: 0
+    };
+
+    /*
+    G.ToImg = function(gr, filter, ops, size){
+
+        var ft = G.filterTex(filter, 28, gr, {});
+        return G.image(null, ft, ops);
+    }*/
+
+    //sprite to FX texture?
+    /*
+    G.filterTex = function (filter, pad, gr, ops = {}) {
+        if(filter){
+            filter.padding = pad * 2;
+            gr.filters = [filter];
+        }
+
+        gr.pivot.set(0, 0);
+        
+        Object.assign(gr, ops);
+        var bounds = gr.getLocalBounds();
+
+        var dx = 0 - bounds.x;
+        var dy = 0 - bounds.y;
+        bounds.x += dx;
+        bounds.y += dy;
+        gr.x += dx;
+        gr.y += dy;
+
+        return G.Renderer_.generateTexture(gr, null, null, new PIXI.Rectangle(
+            bounds.x - pad, bounds.y - pad, bounds.width + pad * 2, bounds.height + pad * 2
+        ));
+    }*/
+
+    //Three.js stuff new
+    G.Default3 = {
+        scaleX: 1,
+        scaleY: 1,
+        size: 1,
+        z: 0,
+    };
+
+
+    G.Image = function (material, ops = {}) {
+        var mat = material.clone();
+        var gr = new THREE.Sprite(mat);
+
+        if (!ops.z)
+            ops.z = 1;
+        if (!ops.size)
+            ops.size = 1;
+        if (!ops.height)
+            ops.height = ops.width;
+
+        if (ops.scaleX) {
+            gr.scale.set(material.map.source.data.width * ops.scaleX,
+                material.map.source.data.height * ops.scaleY, 1);
+        } else {
+            gr.scale.set(material.map.source.data.width * ops.size,
+                material.map.source.data.height * ops.size, 1);
+        }
+
+        //gr.center.set(0,0);
+
+        Object.assign(gr, ops);
+
+        return gr;
+    },
+
+        G.Plane = function (material, ops = {}) {
+            /*
+            var scale = 200;
+            var planegeometrya = new THREE.PlaneGeometry(1 * scale, scale * 1, scale * 1, 1 * scale);
+            G.planemateriala = new THREE.MeshBasicMaterial({
+                map: G.renderTarget.texture,
+            });
+            var planea = new THREE.Mesh(planegeometrya, G.planemateriala);
+            planea.position.x = 400;*/
+            var h = material.map.source.data.height;
+            var w = material.map.source.data.width;
+            var mat = material.clone();
+            var geo = new THREE.PlaneGeometry(w, h, w, h);
+            var gr = new THREE.Mesh(geo, mat);
+
+            if (ops.size != null)
+                gr.scale.set(1 * ops.size, 1 * ops.size, 1);
+
+            Object.assign(gr, ops);
+
+            return gr;
+        },
+
+        G.CirclePoints = function (rad, segments) {
+            var points = [];
+            var ang = 0;
+            var interval = (Math.PI * 2) / segments;
+
+            for (var i = 0; i < segments; i++) {
+                points.push({ x: rad * Math.cos(ang), y: rad * Math.sin(ang) })
+                ang += interval;
+            }
+
+            return points;
+        }
+
+    G.GeoExtrude = (verts, ops) => {
+        var shape = new THREE.Shape(verts);
+        var settings = ops;
+        if (ops.bevel)
+            Object.assign(settings, { bevelThickness: 6, bevelSize: 4, bevelSegments: 5, bevelOffset: -4 });
+
+        return new THREE.ExtrudeGeometry(shape, settings);
+    }
+
+    G.ShapeCircle = function (mat, ops = {}) {
+        if (!mat)
+            mat = Parts.mats.blue;
+
+        var points = G.CirclePoints(ops.radius ? ops.radius : 100, ops.segments ? ops.segments : 20);
+        var geo = G.GeoExtrude(points, { depth: ops.depth ? ops.depth : 4 })
+
+        return G.Shape(mat, geo, ops);
+    }
+
+    G.ShapeLine = function (mat, points, ops = {}) {
+        if (!mat)
+            mat = Parts.mats.blue;
+
+        var geo = new THREE.BufferGeometry().setFromPoints(G.flipVerts(points));
+
+        var gr = new THREE.Line(geo, mat);
+        Object.assign(gr, ops);
+
+        return gr;
+    }
+
+    G.ShapeBox = function (mat, width, height, ops = {}) {
+        if (!mat)
+            mat = Parts.mats.blue;
+        var verts = [
+            { x: -width / 2, y: -height / 2 },
+            { x: width / 2, y: -height / 2 },
+            { x: width / 2, y: height / 2 },
+            { x: -width / 2, y: height / 2 }
+        ];
+
+        return G.Shape(mat, verts, ops);
+    }
+
+    G.GeoFromPath = function (path, ops) {
+        if (!isNaN(path[0]))
+            path = G.VertsFromPath(path);
+
+        if (ops.rounded != null)
+            path = G.roundedPath(path, ops.rounded);
+
+        var geo = G.GeoExtrude(G.flipVerts(path), ops);
+
+        var bbox = {};
+        path._each((p, i) => {
+            if (i == 0) {
+                bbox.max = { x: p.x, y: p.y };
+                bbox.min = { x: p.x, y: p.y };
+            } else {
+                if (p.x > bbox.max.x)
+                    bbox.max.x = p.x;
+                if (p.y > bbox.max.y)
+                    bbox.max.y = p.y;
+                if (p.x < bbox.min.x)
+                    bbox.min.x = p.x;
+                if (p.y < bbox.min.y)
+                    bbox.min.y = p.y;
+            }
+        });
+
+        geo.width = bbox.max.x - bbox.min.x;
+        geo.height = bbox.max.y - bbox.min.y;
+
+        if (!ops.noCenter)
+            geo.center();
+        return geo;
+    }
+
+    //extrude Geometry from a shape
+    G.Shape = function (mat, shapeGeo, ops = {}) {
+        var geo = shapeGeo;
+
+        if (Array.isArray(shapeGeo)) {
+
+            if (ops.rounded)
+                shapeGeo = G.roundedPath(shapeGeo, 12);
+
+            geo = G.GeoExtrude(G.flipVerts(shapeGeo), ops);
+
+            if (!ops.noCenter)
+                geo.center();
+        }
+
+        var gr = new THREE.Mesh(geo, mat);
+        gr.castShadow = ops.shadow ? true : false;
+        gr.receiveShadow = ops.shadow ? true : false;
+        Object.assign(gr, ops);
+
+
+        if (ops.size != null)
+            gr.scale.set(ops.size, ops.size, gr.scale.z);
+        if (ops.scaleX != null)
+            gr.scale.set(ops.scaleX, gr.scale.y, gr.scale.z);
+        if (ops.scaleY != null)
+            gr.scale.set(gr.scale.x, ops.scaleY, gr.scale.z);
+        if (ops.scaleZ != null)
+            gr.scale.set(gr.scale.x, gr.scale.y, ops.scaleZ);
+
+        //gr.position.z = ops.z != null ? ops. z: 0;
+        return gr;
+    }
+
+    G.Sphere = function (mat, ops = {}) {
+        var geo = new THREE.IcosahedronGeometry(ops.radius, 2);
+        var gr = new THREE.Mesh(geo, mat);
+
+        Object.assign(gr, ops);
+        return gr;
+    }
+
+    G.roundedPath = function (path, radius = 10) {
+        var t = this;
+        var newPath = [];
+
+        if (path[0].x != path[path.length - 1].x || path[0].y != path[path.length - 1].y) {
+            path.push({ x: path[0].x, y: path[0].y });
+        }
+
+        for (var i = 0; i < path.length; i++) {
+            var corner = null;
+
+            if (i == 0)
+                corner = G.roundedCorner(path[path.length - 2], path[0], path[1], radius)
+            else if (i != path.length - 1)
+                corner = G.roundedCorner(path[i - 1], path[i], path[i + 1], radius);
+
+            if (corner)
+                corner._each(c => { newPath.push(c); })
+        }
+
+        var nx = { x: newPath[0].x, y: newPath[0].y };
+        if (newPath[newPath.length - 1].x != newPath[0].x || newPath[newPath.length - 1].y != newPath[0].y)
+            newPath.push(nx);
+        return newPath;
+    },
+
+        G.roundedCorner = function (p1, p2, p3, rad = 10, segments = 1) {
+            //paralell lines towards center.
+            var v1 = G.vnorm(G.vsub(p2, p1));
+            var v2 = G.vnorm(G.vsub(p3, p2));
+
+            var perpM1 = { x: -v1.y, y: v1.x };
+
+            var similarity = G.vdot(perpM1, v2);
+            if (similarity < 0)
+                perpM1 = { x: v1.y, y: -v1.x };
+
+            var offset11 = { x: p1.x + perpM1.x * rad, y: p1.y + perpM1.y * rad };
+            var offset12 = { x: p2.x + perpM1.x * rad, y: p2.y + perpM1.y * rad };
+
+            var perpM2 = { x: -v2.y, y: v2.x };
+            var similarity = G.vdot(perpM2, v1);
+            if (similarity > 0)
+                perpM2 = { x: v2.y, y: -v2.x };
+            var offset21 = { x: p3.x + perpM2.x * rad, y: p3.y + perpM2.y * rad };
+            var offset22 = { x: p2.x + perpM2.x * rad, y: p2.y + perpM2.y * rad };
+
+            var cept = G.intercept(offset11.x, offset11.y, offset12.x, offset12.y, offset22.x, offset22.y, offset21.x, offset21.y);
+
+            //circle center
+            if (cept) {
+                var pnt1 = G.pointIntercept(p1, p2, cept);
+                var pnt2 = G.pointIntercept(p3, p2, cept);
+
+                pnt1_origin = G.vsub(pnt1, cept);
+                pnt2_origin = G.vsub(pnt2, cept);
+
+
+                var ang1 = Math.asin(pnt1_origin.x / rad);
+                var ang2 = Math.asin(pnt2_origin.x / rad);
+
+                ang1 = Math.atan2(pnt1_origin.y, pnt1_origin.x);
+                ang2 = Math.atan2(pnt2_origin.y, pnt2_origin.x);
+
+                var diff = G.AngDiff(ang2, ang1);
+                var newAng = ang1 + diff * 0.5;
+                var newPos = { x: cept.x + rad * Math.cos(newAng), y: cept.y + rad * Math.sin(newAng) };
+                var newPath = [pnt1, newPos, pnt2]; //[pnt1, newPos, pnt2];
+
+                return newPath;
+            }
+            return 0;
+        },
+
+        /*
+            G.image = function(gr, texture, ops = {}){
+                if (G.IsServer) return null;
+                if (!gr) { gr = new PIXI.Sprite(); Object.assign(gr, G.Default); }
+                Object.assign(gr, ops);
+                gr.texture = texture;
+                gr.pivot.set(gr.width / 2, gr.height / 2);
+                if(ops.size)
+                    gr.scale.set(gr.size, gr.size);
+               
+                if(ops.fitx){
+                    gr.scale.x = ops.fitx / gr.width;
+                    gr.scale.y = ops.fity / gr.height;
+                }
+        
+                return gr;
+            };*/
+
+        /*
+        G.circle = function(gr, radius, ops){
+            if (G.IsServer) return null;
+            if (!gr) { gr = new PIXI.Graphics(); Object.assign(gr, G.Default); }
+            Object.assign(gr, ops);
+    
+            gr.clear();
+            if (gr.texture != null)
+                gr.beginTextureFill({ texture: gr.texture, matrix: G.texMatrix(ops) })
+            else
+                gr.beginFill(gr.color, gr.alpha);
+    
+            gr.lineStyle(gr.lineWidth, gr.lineColor, gr.lineAlpha, gr.alignment);
+    
+            gr.drawCircle(0, 0, radius);
+            gr.endFill();
+    
+            if(ops.hole){
+                gr.beginHole();
+                gr.drawCircle(0,0, ops.hole);
+                gr.endHole();
+            }
+    
+            gr.filters = gr.filter ? [gr.filter] : null;
+    
+            return gr;
+        };*/
+
+        G.texMatrix = function (ops) {
+            return new PIXI.Matrix(ops.tscale ? ops.tscale : 1, 0, 0, ops.tscale ? ops.tscale : 1, ops.tpivot ? ops.tpivot.x : 0, ops.tpivot ? ops.tpivot.y : 0)
+        }
+
+
+    G.center = function (verts) {
+        return {
+            x: (verts._min(v => v.x).x + verts._max(v => v.x).x) / 2,
+            y: (verts._min(v => v.y).y + verts._max(v => v.y).y) / 2
+        };
+    }
+
+    G.flipVerts = function (verts) {
+        var newVerts = [];
+        for (var i = 0; i < verts.length; i++) {
+            newVerts.push({ x: verts[i].x, y: -verts[i].y })
+        }
+        return newVerts;
+    }
+
+    G.displaceVerts = function (verts, x, y) {
+        verts._each(v => {
+            v.x += x;
+            v.y += y;
+        });
+        return verts;
+    }
+
+    G.offsetToCenter = function (verts) {
+        var newPoints = [];
+        var center = G.center(verts);
+
+        for (var i = 0; i < verts.length; i++) {
+            var v = verts[i];
+            newPoints.push({ x: v.x - center.x, y: v.y - center.y });
+        }
+        return newPoints;
+    }
+
+    /*
+    G.poly = function(gr, points, ops){
+        if (G.IsServer) return null;
+        if (!gr) { gr = new PIXI.Graphics(); Object.assign(gr, G.Default); }
+        Object.assign(gr, ops);
+        //gr.scale = {x:1,y:1};
+        gr.clear();
+        if (gr.texture)
+            gr.beginTextureFill({ texture: gr.texture, matrix: G.texMatrix(ops) })
+        else
+            gr.beginFill(gr.color, gr.alpha);
+        gr.lineStyle({ width: gr.lineWidth, color: gr.lineColor ? gr.lineColor : 0x0, alpha: gr.lineAlpha ? gr.lineAlpha: 1, alignment: gr.alignment, join: 'round', cap: 'round'});
+
+        var newPoints = points;
+
+        if(ops.center !== false){
+            var newPoints = G.offsetToCenter(points);
+        }
+        
+        gr.drawPolygon(newPoints)
+
+        gr.endFill();
+        gr.filters = gr.filter ? [gr.filter] : null;
+        //gr.scale = ops.scale;
+
+        if (ops.size)
+            gr.scale.set(gr.size, gr.size);
+        //gr.pivot.set(gr.offx, gr.offy);
+        return gr;
+    };*/
+
+    //name, gr, z, fps, canScale=false, isStatic=false
+    /*
+    G.particle = function(ops){
+        var part = {};
+        var activeScale = ops.canScale != null ? ops.canScale : false;
+        var activeRotation = ops.canRotate != null ? ops.canRotate : false;
+
+        part.con = new PIXI.ParticleContainer(1000, 
+            { scale: activeScale, alpha: true, rotation: activeRotation});
+        
+        if(ops.gr.baseTexture)
+            part.texture = ops.gr;
+        else{
+            ops.gr.pivot.set(0,0);
+            part.texture = G.Renderer_.generateTexture(ops.gr);
+        }
+
+        part.con.gr = ops.gr;
+        part.con.zIndex = ops.z!=null ? ops.z : 0;
+        part.con.alwaysUpdate = ops.alwaysUpdate != null ? ops.alwaysUpdate : false;
+        part.con.isStatic = ops.isStatic != null ? ops.isStatic : false;
+
+        var existing = G.ParticleContainers.get(ops.name);
+        if(existing){
+            existing.removeChildren();
+            G.Stage_.removeChild(G.ParticleContainers.get(ops.name));
+            G.ParticleContainers.delete(ops.name);
+        }
+
+        G.Stage_.addChild(part.con);
+        G.ParticleContainers.set(ops.name, part.con);
+
+        //G.Stage_.children = G.Stage_.children._orderBy(x => x.zIndex);
+        return part;
+    };*/
+
+    //gr can be a fitlerTex as well
+    /*
+    G.spawnParticle = function(part, renderParent, ops){
+        if (G.IsServer) return null;
+        if (renderParent && !renderParent.InFrame && !part.isStatic)
+            return;
+
+        var grPart = new PIXI.Sprite();
+
+        if(renderParent)
+            grPart.oid = renderParent.oid;
+        grPart.texture = part.texture;
+        grPart.decay = true;
+        Object.assign(grPart, ops);
+        grPart.maxLife = grPart.maxLife ? grPart.maxLife : grPart.life;
+        grPart.x = grPart.rx = grPart.rx0 = ops.pos.x;
+        grPart.y = grPart.ry = grPart.ry0 = ops.pos.y;
+        //grPart.rotation = Math.Pi*0.5;
+        grPart.alpha = grPart.life / grPart.maxLife;
+        if(grPart.background){
+            grPart.cBack = -100 / grPart.background;
+            grPart.offx = grPart.rx0 - ((G.bounds.min.x + grPart.rx0)/grPart.cBack);
+            grPart.offy = grPart.ry0 - ((G.bounds.min.y + grPart.ry0)/grPart.cBack);
+        }
+        if(!grPart.vel)
+            grPart.vel = {x: 0, y: 0};
+
+        //grPart.pivot = { x: -gr.width/2, y: -gr.height/2 };
+
+        //if(!grPart.anchor)
+        grPart.anchor = { x: 0.5, y: 0.5 }; //0.5??
+        //depends if it was centered prior to coming in??
+
+        part.con.addChild(grPart);
+        return grPart;
+    };*/
+
+    //Helper Functions-------------------------------------------------------
+
+    G.sound = function (sound, item, vol, alwaysPlay = false) {
+        if (!G.IsServer && (item == null || item.InFrame)) {
+            var globalVol = 1;
+            var soundfx = CG[sound];
+
+
+            if (item && item.IsPlayer && (!item.IsGuy || item.IsAI))
+                vol = vol * 0.1;
+
+            if (!soundfx.total)
+                soundfx.total = new UT.Queue();
+
+            if (alwaysPlay || (item != null && item.IsGuy) || !soundfx.playing(soundfx.total.data[soundfx.total.head])) {
+                var soundId = soundfx.play();
+
+                if (vol != null)
+                    soundfx.volume(vol * globalVol, soundId);
+                soundfx.total.enQ(soundId, 5);
+            }
+
+        }
+    }
+
+    G.pEdge = function (x1, y1, x2, y2) {
+        var ob = PL.Edge(PL.v2(x1 / G.pscale, y1 / G.pscale), PL.v2(x2 / G.pscale, y2 / G.pscale));
+        ob.ptype = EN.Shapes.get('edge');
+        ob.v1 = { x: x1, y: y1 };
+        ob.v2 = { x: x2, y: y2 };
+        return ob;
+    }
+
+    G.pCircle = function (r, wx = 0, wy = 0) {
+        var ob = PL.Circle(PL.v2(wx / G.pscale, wy / G.pscale), r / G.pscale);
+        ob.ptype = EN.Shapes.get('circle');
+        ob.r = r;
+        return ob;
+    }
+
+    G.pBox = function (w, h, offx = 0, offy = 0) {
+        var ob = PL.Box(w / G.pscale / 2, h / G.pscale / 2, PL.v2(offx / G.pscale, offy / G.pscale))
+
+        ob.ptype = EN.Shapes.get('rect');
+        ob.w = w;
+        ob.h = h;
+        return ob;
+    }
+
+    G.pPoly = function (verts) {
+        var pverts = [];
+        verts._each(v => { pverts.push(PL.Vec2(v.x / G.pscale, v.y / G.pscale)) });
+        var ob = PL.Polygon(pverts);
+        ob.ptype = EN.Shapes.get('poly');
+        return ob;
+    }
+
+    G.vnorm = function (v) {
+        var m = G.vmag(v);
+        if (m == 0) return { x: 0, y: 0 };
+        return { x: v.x / m, y: v.y / m };
+    }
+
+    G.vsimilarity = function (v1, v2) {
+        var denom = (G.vmag(v1) * G.vmag(v2));
+        if (denom == 0) return 0;
+        return G.vdot(v1, v2) / denom;
+    };
+
+    //finds how similar two vectors are 0==perpendicular
+    G.vdot = function (v1, v2) { return (v1.x * v2.x) + (v1.y * v2.y) }
+
+    G.vmag = function (v) { return Math.sqrt(v.x * v.x + v.y * v.y); }
+
+    G.vsub = function (v1, v2) { return { x: v1.x - v2.x, y: v1.y - v2.y }; };
+
+    G.dist = function (v1, v2) {
+        return Math.sqrt(((v2.x - v1.x) * (v2.x - v1.x)) + ((v2.y - v1.y) * (v2.y - v1.y)));
+    };
+
+    G.Form = function (num, round = 3) {
+        return Number(num.toFixed(round));
+    };
+
+    G.VertsFromPath = function (path) {
+        var verts = [];
+        for (var i = 0; i < path.length - 1; i += 2)
+            verts.push({ x: Number(path[i]), y: Number(path[i + 1]) });
+        return verts;
+    };
+
+    G.Graphic = function (bod, props = {}) {
+        var shape = bod.getShape();
+
+        if (shape.ptype == EN.Shapes.get('edge'))
+            return G.line(null, shape.v1.x, shape.v1.y, shape.v2.x, shape.v2.y, props);
+        if (shape.ptype == EN.Shapes.get('circle'))
+            return G.circle(null, shape.r, props);
+        if (shape.ptype == EN.Shapes.get('rect'))
+            return G.rect(null, shape.w, shape.h, 3, props);
+        if (shape.ptype == EN.Shapes.get('poly')) {
+            var pnts = [];
+            var off = shape.m_centroid;
+
+            shape.m_vertices._each(v => {
+                pnts.push((v.x - off.x) * G.pscale);
+                pnts.push((v.y - off.y) * G.pscale);
+            });
+            props.center = false;
+            return G.poly(null, pnts, props);
+        }
+    };
+
+    G.InBox = function (obj, objPos, box, buffer) {
+        return box != null &&
+
+            ((objPos.x < (box.max.x + buffer) &&
+                objPos.x > (box.min.x - buffer) &&
+                objPos.y < (box.max.y + buffer) &&
+                objPos.y > (box.min.x - buffer)) ||
+
+                obj.min.x < (box.max.x + buffer) &&
+                obj.max.x > (box.min.x - buffer) &&
+                obj.max.y > (box.min.y - buffer) &&
+                obj.min.y < (box.max.y + buffer));
+    };
+
+    // line intercept math by Paul Bourke http://paulbourke.net/geometry/pointlineplane/
+    G.intercept = function (x1, y1, x2, y2, x3, y3, x4, y4, ignoreLength = false) {
+        if ((x1 === x2 && y1 === y2) || (x3 === x4 && y3 === y4))
+            return false
+
+        denominator = ((y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1))
+
+        if (denominator === 0)
+            return false
+
+        let ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denominator
+        let ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / denominator
+
+        if (!ignoreLength) {
+            if (ua < 0 || ua > 1 || ub < 0 || ub > 1)
+                return false
+        }
+
+        let x = x1 + ua * (x2 - x1)
+        let y = y1 + ua * (y2 - y1)
+
+        return { x, y }
+    };
+
+    //one line, one point.  -> point along line that norms with point
+    G.pointIntercept = function (p1, p2, p3) {// p1, p2 are the line, p3=point
+        var xd = p2.x - p1.x;
+        var yd = p2.y - p1.y;
+        var u = ((p3.x - p1.x) * (p2.x - p1.x) + (p3.y - p1.y) * (p2.y - p1.y)) / (xd * xd + yd * yd);
+        return { x: p1.x + u * xd, y: p1.y + u * yd };
+    }
+
+    //colllide checks for ez use.
+
+    //opts: myType, oType, otherName, avoidSelf
+    G.CCheck = function (e, opts) {
+        var isColide = true;
+
+        if (opts.myType)
+            isColide = isColide && e.myType == EN.Parts.get(opts.myType);
+        if (opts.oType)
+            isColide = isColide && e.oType == EN.Parts.get(opts.oType);
+
+        if (opts.otherName)
+            isColide = isColide && e.other.etype == EN.Objs.get(opts.otherName);
+        if (opts.avoidSelf) {
+            isColide = isColide && e.t.oid != e.other.oid;
+            if (e.t.parentObj && e.other.parentObj)
+                isColide = isColide && e.t.parentObj.oid != e.other.parentObj.oid;
+        }
+        return isColide;
+    }
+    /*
+    G.CCheck = function(e, myType, oType, otherObjName, avoidSelf = true){
+        var isColide = true;
+
+        if(myType)
+            isColide = isColide && e.myType == EN.Parts.get(myType);
+        if(oType)
+            isColide = isColide && e.oType == EN.Parts.get(oType);
+
+        if(otherObjName)
+            isColide = isColide && e.other.etype == EN.Objs.get(otherObjName);
+        if(avoidSelf){
+            isColide = isColide && e.t.oid != e.other.oid;
+            if (e.t.parentObj && e.other.parentObj)
+                isColide = isColide && e.t.parentObj.oid != e.other.parentObj.oid;
+        }
+        return isColide;
+    };*/
+
+    G.Outline = function (gr, totalVerts = 0) {
+        var oldpiv = { x: gr.pivot.x, y: gr.pivot.y };
+        gr.pivot.set(0, 0);
+        var width = gr.width;
+        gr.x = 1;
+        gr.y = 1;
+
+        //var off = {x: texture.width/2, y: texture.height/2};
+
+        var pix = G.Renderer_.plugins.extract.pixels(gr);
+
+        var verts = geom.contour(function (x, y) {
+            return (pix[(y * width + x) * 4 + 3]) > 20;
+        });
+        var subVerts = [];
+        //var div = Math.min(verts.length, totalVerts);
+        //var eo = Math.floor(verts.length / div);
+
+        gr.pivot.set(oldpiv.x, oldpiv.y);
+
+        var dx = 0;
+        var dy = 0;
+        var li = 0;
+        for (var i = 0; i < verts.length; i += 1) {
+            if (i > 0) {
+                dx = Math.abs(verts[li][0] - verts[i][0]);
+                dy = Math.abs(verts[li][1] - verts[i][1]);
+            }
+
+            if (i == 0 || (dx > 7) || (dy > 7)) {
+                subVerts.push({ x: verts[i][0], y: verts[i][1] });
+                li = i;
+            }
+        }
+
+        subVerts.push({ x: subVerts[0].x, y: subVerts[0].y });
+        return subVerts;
+    };
+
+    G.Quad = function (x, t, b, c, d) {
+        if ((t /= d / 2) < 1) return c / 2 * t * t + b;
+        return -c / 2 * ((--t) * (t - 2) - 1) + b;
+    };
+    G.Cubic = function (x, t, b, c, d) {
+        if ((t /= d / 2) < 1) return c / 2 * t * t * t + b;
+        return c / 2 * ((t -= 2) * t * t + 2) + b;
+    };
+
+    G.rseed = function (seed) {
+        return (G.IsServer ? seedrandom(seed + GU.seed)() : new Math.seedrandom(seed + GU.seed)());
+    }
+
+    G.ran = function (start, flex, ran) {
+        return -flex + start + (ran ? ran : Math.random()) * flex * 2;
+    }
+
+    G.IsCW = function (verts) {
+        var sum = 0;
+        for (var i = 1; i < verts.length; i++)
+            sum += (verts[i].x - verts[i - 1].x) * (verts[i].y + verts[i - 1].y);
+        return sum <= 0;
+    }
+
+    //returns the value instead automatically setting it
+    //Quadratic translations possible
+    G.lerp2 = function (name, val, tval, speed, period, done) {
+        if (!G.lerps) G.lerps = {};
+        if (!G.lerps[name] || (!G.lerps[name].active && val != tval) || (tval != G.lerps[name].tval)) {
+            var diff = tval - val;
+
+            G.lerps[name] = {
+                ogVal: val,
+                tval: tval,
+                dx: diff,
+                period: period != null ? period : Math.abs(Math.ceil(diff / speed)),
+                tick: 0
+            };
+        }
+
+        if (val != tval) {
+            var pct = G.Quad(null, Math.min(G.lerps[name].period, G.lerps[name].tick), 0, 1, G.lerps[name].period);
+            G.lerps[name].tick++;
+            G.lerps[name].active = true;
+
+            pct = Math.min(1, pct);
+            var returnVal = G.lerps[name].ogVal + pct * G.lerps[name].dx;
+
+            if (pct == 1) {
+                if (done) done(tval);
+                return tval;
+            }
+            return returnVal;
+        } else {
+            G.lerps[name].active = false;
+        }
+        return tval;
+    };
+
+    G.lerp = function (thing, key, val, speed, useAngDiff) {
+        var dx = val - thing[key];
+
+
+        if (useAngDiff)
+            dx = G.AngDiff(val, thing[key]);
+
+        speed = Math.abs(dx) <= speed ? Math.abs(dx) : speed;
+        thing[key] += dx > 0 ? speed : -speed;
+    };
+
+    G.Paralax = function (ox, oy, offx, offy, z = -10) { //non-paralaxed positions into laxed
+        var back = -100 / z;
+        return {
+            x: ((G.Cam.position.x - ox) / back) + ox + offx,
+            y: ((-G.Cam.position.y - oy) / back) + oy + offy
+        };
+    }
+
+    G.AngDiff = function (a, b) {
+        var ang = Math.abs(a - b) % (2 * Math.PI);
+        var da = ang > Math.PI ? (2 * Math.PI) - ang : ang;
+        var sign = (a - b >= 0 && a - b <= Math.PI) || (a - b <= -Math.PI && a - b >= -Math.PI * 2) ? 1 : -1;
+        return da * sign;
+    };
+
+    G.UID_ = function (useAlt = false) {
+        var chars = useAlt ? 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz' :
+            'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+        var uid = "";
+        for (var i = 0; i < 3; i++)
+            uid += chars[Math.floor(Math.random() * chars.length)];
+        if (G.Objs && G.Objs.has(uid)) return G.UID_(useAlt);
+        return uid;
+    };
+
+}(typeof exports === 'undefined' ? G : exports));
+
+
+
+

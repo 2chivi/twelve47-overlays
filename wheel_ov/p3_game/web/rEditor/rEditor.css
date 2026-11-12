@@ -1,0 +1,12 @@
+.Editor {
+  position: absolute;
+  display: grid;
+  grid-template-columns: 100px 100px 100px;
+  right: 20px;
+  top: 50px;
+  grid-gap: 5px;
+}
+.Editor input,
+.Editor select {
+  max-width: 100%;
+}
